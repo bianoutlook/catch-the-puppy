@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>接住元宝</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(180deg, #87CEEB 0%, #E0F6FF 100%);
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+        }
+        
+        #gameCanvas {
+            display: block;
+            margin: 0 auto;
+            background: transparent;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .score-display {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 48px;
+            font-weight: bold;
+            color: #333;
+            text-shadow: 2px 2px 4px rgba(255,255,255,0.8);
+        }
+        
+        .combo-display {
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            color: #FF6B6B;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .combo-display.active {
+            opacity: 1;
+        }
+        
+        .level-display {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 18px;
+            color: #4A90D9;
+            font-weight: bold;
+            background: rgba(255,255,255,0.8);
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+        
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(255,255,255,0.9);
+            pointer-events: auto;
+        }
+        
+        #gameOverScreen {
+            display: none;
+        }
+        
+        h1 {
+            font-size: 42px;
+            color: #4A90D9;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .subtitle {
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 40px;
+            text-align: center;
+        }
+        
+        .btn {
+            background: linear-gradient(180deg, #4A90D9 0%, #357ABD 100%);
+            color: white;
+            border: none;
+            padding: 15px 60px;
+            font-size: 24px;
+            border-radius: 50px;
+            cursor: pointer;
+            margin: 10px;
+            box-shadow: 0 4px 15px rgba(74,144,217,0.4);
+            transition: transform 0.1s;
+        }
+        
+        .btn:active {
+            transform: scale(0.95);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(180deg, #95A5A6 0%, #7F8C8D 100%);
+            box-shadow: 0 4px 15px rgba(149,165,166,0.4);
+        }
+        
+        .final-score {
+            font-size: 72px;
+            font-weight: bold;
+            color: #4A90D9;
+            margin: 20px 0;
+        }
+        
+        .best-score {
+            font-size: 20px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .tutorial {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 16px;
+            color: #666;
+            text-align: center;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .perfect-text {
+            position: absolute;
+            font-size: 32px;
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            pointer-events: none;
+            animation: floatUp 1s forwards;
+        }
+        
+        @keyframes floatUp {
+            0% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-50px) scale(1.2);
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui">
+        <div class="score-display" id="scoreDisplay">0</div>
+        <div class="combo-display" id="comboDisplay">Combo x5!</div>
+        <div class="level-display" id="levelDisplay">第 1 关</div>
+        
+        <div id="startScreen">
+            <h1>💰 接住元宝</h1>
+            <p class="subtitle">看准时机，接住掉落的元宝！</p>
+            <button class="btn" id="startBtn">开始游戏</button>
+            <p class="tutorial">当小狗落入圆圈时点击屏幕</p>
+        </div>
+        
+        <div id="gameOverScreen">
+            <h1>游戏结束</h1>
+            <p class="subtitle">本次得分</p>
+            <div class="final-score" id="finalScore">0</div>
+            <p class="best-score" id="bestScore">历史最佳：0</p>
+            <p class="subtitle" id="difficultyInfo" style="margin-top: 10px; font-size: 14px; color: #999;"></p>
+            <button class="btn" id="restartBtn">再来一次</button>
+        </div>
+    </div>
+
+    <script>
+        // 游戏配置
+        const CONFIG = {
+            canvasWidth: 375,
+            canvasHeight: 667,
+            targetCircleY: 550,
+            targetCircleRadius: 50,
+            puppySize: 50,
+            baseSpeed: 4,
+            maxSpeed: 15,
+            spawnInterval: 1200,
+            minSpawnInterval: 250,
+            levelInterval: 10,  // 每 10 分进入下一关
+            levelRestTime: 1500  // 关卡间休息时间
+        };
+        
+        // 游戏状态
+        const state = {
+            screen: 'start',
+            score: 0,
+            bestScore: 0,
+            combo: 0,
+            level: 1,
+            puppies: [],
+            obstacles: [],  // 干扰物
+            lastSpawnTime: 0,
+            spawnInterval: CONFIG.spawnInterval,
+            speed: CONFIG.baseSpeed,
+            isLevelTransition: false,  // 关卡过渡中
+            levelTransitionTime: 0
+        };
+        
+        // 动态判定圈半径
+        window.currentTargetRadius = CONFIG.targetCircleRadius;
+        
+        // 关卡配置
+        const LEVEL_CONFIG = {
+            1: { speed: 4, spawn: 1200, obstacles: false, fake: false },
+            2: { speed: 6, spawn: 1000, obstacles: true, fake: false },   // 加入树叶
+            3: { speed: 7, spawn: 900, obstacles: true, fake: true },     // 加入假动作
+            4: { speed: 9, spawn: 700, obstacles: true, fake: true },     // 加入分身
+            5: { speed: 11, spawn: 500, obstacles: true, fake: true },    // 快速模式
+            6: { speed: 13, spawn: 400, obstacles: true, fake: true },    // 地狱模式
+            7: { speed: 15, spawn: 300, obstacles: true, fake: true }     // 传说模式
+        };
+        
+        // 加载历史最佳分数
+        const savedBest = localStorage.getItem('catchPuppyBest');
+        if (savedBest) {
+            state.bestScore = parseInt(savedBest);
+            document.getElementById('bestScore').textContent = `历史最佳：${state.bestScore}`;
+        }
+        
+        // Canvas 设置
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        function resizeCanvas() {
+            const scale = Math.min(
+                window.innerWidth / CONFIG.canvasWidth,
+                window.innerHeight / CONFIG.canvasHeight
+            );
+            canvas.width = CONFIG.canvasWidth * scale;
+            canvas.height = CONFIG.canvasHeight * scale;
+            ctx.scale(scale, scale);
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // 干扰物类（树叶、障碍物）
+        class Obstacle {
+            constructor(type) {
+                this.type = type; // 'leaf' 或 'shadow'
+                this.x = Math.random() * (CONFIG.canvasWidth - 60) + 30;
+                this.y = -50;
+                this.width = 40;
+                this.height = 40;
+                this.speed = Math.random() * 2 + 2;
+                this.rotation = 0;
+                this.rotationSpeed = Math.random() * 0.1 - 0.05;
+                this.fadeOut = false;
+            }
+            
+            update() {
+                this.y += this.speed;
+                this.rotation += this.rotationSpeed;
+                this.x += Math.sin(this.y / 30) * 0.5;
+                
+                // 超出屏幕移除
+                if (this.y > CONFIG.canvasHeight + 50) {
+                    return false; // 移除
+                }
+                return true; // 保留
+            }
+            
+            draw() {
+                if (this.type === 'leaf') {
+                    // 绘制树叶
+                    ctx.fillStyle = '#7CB342';
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.rotate(this.rotation);
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, 20, 10, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                } else if (this.type === 'shadow') {
+                    // 绘制小狗分身（假影）
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, 25, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            
+            // 检查是否点击到干扰物（惩罚）
+            checkClick(clickY) {
+                const distance = Math.abs(this.y - clickY);
+                return distance < 40;
+            }
+        }
+        
+        // 元宝类
+        class Yuanbao {
+            constructor(hasFakeAction = false) {
+                this.x = CONFIG.canvasWidth / 2;
+                this.y = -CONFIG.puppySize;
+                this.width = CONFIG.puppySize;
+                this.height = CONFIG.puppySize;
+                this.speed = state.speed;
+                this.caught = false;
+                this.missed = false;
+                this.hasFakeAction = hasFakeAction;
+                this.fakeActionDone = false;
+                this.fakeActionY = Math.random() * 200 + 100; // 假动作触发位置
+                this.isFakeFalling = false; // 是否处于假下落状态
+                this.shadow = null; // 分身
+            }
+            
+            update() {
+                // 假动作逻辑
+                if (this.hasFakeAction && !this.fakeActionDone && this.y > this.fakeActionY) {
+                    this.fakeActionDone = true;
+                    this.isFakeFalling = true;
+                    // 创建分身
+                    this.shadow = {
+                        x: this.x + (Math.random() > 0.5 ? 40 : -40),
+                        y: this.y,
+                        alpha: 0.5
+                    };
+                    // 暂停 0.5 秒
+                    this.pauseTime = Date.now() + 500;
+                }
+                
+                if (this.isFakeFalling && Date.now() < this.pauseTime) {
+                    // 假下落期间不动
+                    if (this.shadow) {
+                        this.shadow.y += this.speed;
+                        this.shadow.alpha -= 0.02;
+                    }
+                    return;
+                }
+                
+                this.y += this.speed;
+                this.x += Math.sin(this.y / 50) * 0.5;
+                
+                // 更新分身
+                if (this.shadow && this.shadow.alpha > 0) {
+                    this.shadow.y += this.speed;
+                    this.shadow.alpha -= 0.01;
+                } else {
+                    this.shadow = null;
+                }
+                
+                // 检查是否漏掉
+                if (this.y > CONFIG.canvasHeight && !this.caught) {
+                    this.missed = true;
+                    gameOver();
+                }
+            }
+            
+            draw() {
+                if (this.caught) return;
+                
+                // 绘制分身（如果有）
+                if (this.shadow && this.shadow.alpha > 0) {
+                    ctx.fillStyle = `rgba(0, 0, 0, ${this.shadow.alpha})`;
+                    this.drawYuanbao(this.shadow.x, this.shadow.y, true);
+                }
+                
+                // 绘制元宝
+                this.drawYuanbao(this.x, this.y, false);
+            }
+            
+            drawYuanbao(x, y, isShadow) {
+                const size = this.width / 2;
+                
+                ctx.save();
+                ctx.translate(x, y);
+                
+                if (isShadow) {
+                    // 分身 - 半透明
+                    ctx.globalAlpha = 0.3;
+                }
+                
+                // 元宝底座 - 船形
+                const baseGradient = ctx.createLinearGradient(-size, -size * 0.3, size, size * 0.8);
+                baseGradient.addColorStop(0, '#FFE066');
+                baseGradient.addColorStop(0.3, '#FFD700');
+                baseGradient.addColorStop(0.7, '#FFA500');
+                baseGradient.addColorStop(1, '#FF8C00');
+                ctx.fillStyle = baseGradient;
+                
+                ctx.beginPath();
+                // 底座形状（船形）
+                ctx.moveTo(-size * 0.9, -size * 0.2);
+                // 左侧向上
+                ctx.quadraticCurveTo(-size * 1.0, -size * 0.5, -size * 0.7, -size * 0.3);
+                // 左上翘角
+                ctx.quadraticCurveTo(-size * 0.5, -size * 0.6, -size * 0.3, -size * 0.4);
+                // 中间凹陷
+                ctx.quadraticCurveTo(0, -size * 0.5, size * 0.3, -size * 0.4);
+                // 右上翘角
+                ctx.quadraticCurveTo(size * 0.5, -size * 0.6, size * 0.7, -size * 0.3);
+                // 右侧向上
+                ctx.quadraticCurveTo(size * 1.0, -size * 0.5, size * 0.9, -size * 0.2);
+                // 右下弧
+                ctx.quadraticCurveTo(size * 0.8, size * 0.6, 0, size * 0.8);
+                // 左下弧
+                ctx.quadraticCurveTo(-size * 0.8, size * 0.6, -size * 0.9, -size * 0.2);
+                ctx.closePath();
+                ctx.fill();
+                
+                // 中间的金球/金锭
+                const ballGradient = ctx.createRadialGradient(0, -size * 0.3, 0, 0, -size * 0.3, size * 0.5);
+                ballGradient.addColorStop(0, '#FFF8DC');
+                ballGradient.addColorStop(0.3, '#FFD700');
+                ballGradient.addColorStop(0.8, '#FFA500');
+                ballGradient.addColorStop(1, '#FF8C00');
+                ctx.fillStyle = ballGradient;
+                
+                ctx.beginPath();
+                // 中间凸起的金球
+                ctx.ellipse(0, -size * 0.3, size * 0.55, size * 0.35, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 金球高光（左上）
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.beginPath();
+                ctx.ellipse(-size * 0.2, -size * 0.45, size * 0.15, size * 0.08, -Math.PI / 4, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 底座高光（左侧）
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.beginPath();
+                ctx.moveTo(-size * 0.7, -size * 0.1);
+                ctx.quadraticCurveTo(-size * 0.6, size * 0.2, -size * 0.5, size * 0.4);
+                ctx.quadraticCurveTo(-size * 0.4, size * 0.2, -size * 0.5, 0);
+                ctx.closePath();
+                ctx.fill();
+                
+                // 右侧阴影
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                ctx.beginPath();
+                ctx.moveTo(size * 0.5, -size * 0.1);
+                ctx.quadraticCurveTo(size * 0.6, size * 0.2, size * 0.7, size * 0.4);
+                ctx.quadraticCurveTo(size * 0.5, size * 0.3, size * 0.5, 0);
+                ctx.closePath();
+                ctx.fill();
+                
+                // 轮廓线
+                ctx.strokeStyle = '#DAA520';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                
+                if (isShadow) {
+                    ctx.globalAlpha = 1.0;
+                }
+                
+                ctx.restore();
+            }
+            
+            isInTargetCircle() {
+                const radius = window.currentTargetRadius || CONFIG.targetCircleRadius;
+                const distance = Math.abs(this.y - CONFIG.targetCircleY);
+                return distance < radius;
+            }
+        }
+        
+        // 绘制判定圈
+        function drawTargetCircle() {
+            const radius = window.currentTargetRadius || CONFIG.targetCircleRadius;
+            
+            // 外圈（发光效果）
+            ctx.strokeStyle = `rgba(255, 255, 255, ${0.6 + Math.sin(Date.now() / 200) * 0.2})`;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(CONFIG.canvasWidth / 2, CONFIG.targetCircleY, radius, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // 内圈（半透明填充）
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.beginPath();
+            ctx.arc(CONFIG.canvasWidth / 2, CONFIG.targetCircleY, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // 绘制地面
+        function drawGround() {
+            ctx.fillStyle = '#8FBC8F';
+            ctx.fillRect(0, CONFIG.canvasHeight - 20, CONFIG.canvasWidth, 20);
+        }
+        
+        // 生成元宝
+        function spawnYuanbao() {
+            const level = Math.min(state.level, 7);
+            const config = LEVEL_CONFIG[level];
+            const hasFake = config.fake && Math.random() > 0.5;
+            state.puppies.push(new Yuanbao(hasFake));
+        }
+        
+        // 生成干扰物
+        function spawnObstacle() {
+            const type = Math.random() > 0.7 ? 'shadow' : 'leaf';
+            state.obstacles.push(new Obstacle(type));
+        }
+        
+        // 更新关卡
+        function updateLevel() {
+            const newLevel = Math.floor(state.score / CONFIG.levelInterval) + 1;
+            
+            if (newLevel > state.level) {
+                state.level = newLevel;
+                state.isLevelTransition = true;
+                state.levelTransitionTime = Date.now() + CONFIG.levelRestTime;
+                
+                // 显示关卡提示
+                showLevelUp();
+                
+                // 应用新关卡配置
+                const config = LEVEL_CONFIG[Math.min(state.level, 7)];
+                state.speed = config.speed;
+                state.spawnInterval = config.spawn;
+            }
+        }
+        
+        // 显示关卡提升特效
+        function showLevelUp() {
+            const levelNames = ['', '🌱 新手关', '🍃 树叶关', '🎭 假动作关', '👻 分身关', '⚡ 快速关', '🔥 地狱关', '👑 传说关'];
+            const text = `第 ${state.level} 关 ${levelNames[state.level] || ''}`;
+            
+            const effect = document.createElement('div');
+            effect.className = 'perfect-text';
+            effect.textContent = text;
+            effect.style.left = (CONFIG.canvasWidth / 2 - 60) + 'px';
+            effect.style.top = '200px';
+            effect.style.fontSize = '28px';
+            effect.style.color = '#FFD700';
+            document.getElementById('ui').appendChild(effect);
+            
+            setTimeout(() => effect.remove(), 1500);
+        }
+        
+        // 更新难度
+        function updateDifficulty() {
+            updateLevel();
+            
+            // 判定圈随分数缩小
+            const dynamicRadius = Math.max(
+                CONFIG.targetCircleRadius - (state.score / 10) * 5,
+                30
+            );
+            window.currentTargetRadius = dynamicRadius;
+        }
+        
+        // 显示 Perfect/Combo 特效
+        function showEffect(text, x, y) {
+            const effect = document.createElement('div');
+            effect.className = 'perfect-text';
+            effect.textContent = text;
+            effect.style.left = x + 'px';
+            effect.style.top = y + 'px';
+            document.getElementById('ui').appendChild(effect);
+            
+            setTimeout(() => effect.remove(), 1000);
+        }
+        
+        // 更新 UI
+        function updateUI() {
+            document.getElementById('scoreDisplay').textContent = state.score;
+            
+            const comboDisplay = document.getElementById('comboDisplay');
+            if (state.combo >= 5) {
+                comboDisplay.textContent = `Combo x${state.combo}!`;
+                comboDisplay.classList.add('active');
+            } else {
+                comboDisplay.classList.remove('active');
+            }
+            
+            // 更新关卡显示
+            document.getElementById('levelDisplay').textContent = `第${state.level}关`;
+        }
+        
+        // 游戏主循环
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            if (state.screen !== 'playing') return;
+            
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+            
+            // 清空画布
+            ctx.clearRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
+            
+            // 检查关卡过渡
+            if (state.isLevelTransition) {
+                if (Date.now() > state.levelTransitionTime) {
+                    state.isLevelTransition = false;
+                } else {
+                    // 过渡期间暂停生成
+                    drawTargetCircle();
+                    drawGround();
+                    state.puppies.forEach(puppy => puppy.draw());
+                    state.obstacles.forEach(obs => obs.draw());
+                    requestAnimationFrame(gameLoop);
+                    return;
+                }
+            }
+            
+            // 生成新元宝
+            if (timestamp - state.lastSpawnTime > state.spawnInterval) {
+                spawnYuanbao();
+                state.lastSpawnTime = timestamp;
+            }
+            
+            // 生成干扰物（根据关卡配置）
+            const level = Math.min(state.level, 7);
+            const config = LEVEL_CONFIG[level];
+            if (config.obstacles && Math.random() < 0.3) {
+                spawnObstacle();
+            }
+            
+            // 更新和绘制所有小狗
+            state.puppies.forEach(puppy => {
+                puppy.update();
+                puppy.draw();
+            });
+            
+            // 更新和绘制所有干扰物
+            state.obstacles = state.obstacles.filter(obs => obs.update());
+            state.obstacles.forEach(obs => obs.draw());
+            
+            // 移除已捕获或掉落的
+            state.puppies = state.puppies.filter(p => !p.caught && !p.missed);
+            
+            // 绘制判定圈和地面
+            drawTargetCircle();
+            drawGround();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // 处理点击
+        function handleInput() {
+            if (state.screen !== 'playing') return;
+            
+            // 检查是否有小狗在判定圈内
+            let caught = false;
+            let closestPuppy = null;
+            let closestDistance = Infinity;
+            
+            // 找到最接近判定圈中心的小狗
+            state.puppies.forEach(puppy => {
+                if (!puppy.caught && !puppy.missed) {
+                    const distance = Math.abs(puppy.y - CONFIG.targetCircleY);
+                    const radius = window.currentTargetRadius || CONFIG.targetCircleRadius;
+                    if (distance < radius && distance < closestDistance) {
+                        closestDistance = distance;
+                        closestPuppy = puppy;
+                    }
+                }
+            });
+            
+            // 捕获最接近的小狗
+            if (closestPuppy) {
+                closestPuppy.caught = true;
+                caught = true;
+                
+                // 计算得分
+                state.score++;
+                state.combo++;
+                
+                // 检查是否是完美时机（更严格的判定）
+                const isPerfect = closestDistance < (window.currentTargetRadius || CONFIG.targetCircleRadius) / 4;
+                
+                if (isPerfect) {
+                    state.score += 2; // 完美额外加 2 分
+                    showEffect('Perfect!', closestPuppy.x - 30, closestPuppy.y - 30);
+                }
+                
+                // 连击奖励（每 5 连击就有奖励）
+                if (state.combo % 5 === 0) {
+                    state.score += 3;
+                    showEffect(`Combo ${state.combo}!`, CONFIG.canvasWidth / 2 - 40, 100);
+                }
+                
+                updateDifficulty();
+                updateUI();
+            }
+            
+            // 如果点击但没接住（空点击），连击中断
+            if (!caught) {
+                state.combo = 0;
+                updateUI();
+            }
+        }
+        
+        // 开始游戏
+        function startGame() {
+            state.screen = 'playing';
+            state.score = 0;
+            state.combo = 0;
+            state.level = 1;
+            state.puppies = [];
+            state.obstacles = [];
+            state.speed = CONFIG.baseSpeed;
+            state.spawnInterval = CONFIG.spawnInterval;
+            state.lastSpawnTime = performance.now();
+            state.isLevelTransition = false;
+            window.currentTargetRadius = CONFIG.targetCircleRadius;
+            
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('gameOverScreen').style.display = 'none';
+            updateUI();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // 游戏结束
+        function gameOver() {
+            state.screen = 'gameover';
+            
+            // 更新历史最佳
+            if (state.score > state.bestScore) {
+                state.bestScore = state.score;
+                localStorage.setItem('catchPuppyBest', state.bestScore);
+            }
+            
+            document.getElementById('finalScore').textContent = state.score;
+            document.getElementById('bestScore').textContent = `历史最佳：${state.bestScore}`;
+            
+            // 显示难度信息
+            const difficultyText = state.score < 10 ? '🌱 新手' : 
+                                   state.score < 20 ? '💰 入门' :
+                                   state.score < 30 ? '🔥 高手' :
+                                   state.score < 50 ? '⚡ 大神' : '👑 传说';
+            document.getElementById('difficultyInfo').textContent = `难度等级：${difficultyText} | 最高关卡：第${state.level}关`;
+            
+            document.getElementById('gameOverScreen').style.display = 'flex';
+        }
+        
+        // 事件绑定
+        document.getElementById('startBtn').addEventListener('click', startGame);
+        document.getElementById('restartBtn').addEventListener('click', startGame);
+        
+        canvas.addEventListener('click', handleInput);
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            handleInput();
+        });
+        
+        // 初始绘制
+        function initialDraw() {
+            ctx.clearRect(0, 0, CONFIG.canvasWidth, CONFIG.canvasHeight);
+            drawTargetCircle();
+            drawGround();
+        }
+        initialDraw();
+    </script>
+</body>
+</html>
